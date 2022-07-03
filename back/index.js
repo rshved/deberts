@@ -12,12 +12,11 @@ let cards = null;
 let piles = null;
 (async function getCards () {
   try {
-    const { data: deck } = await axios('https://deckofcardsapi.com/api/deck/new/shuffle/?cards=AS,7S,8S,9S,10S,JS,QS,KS,AD,7D,8D,9D,' +
-      '10D,JD,QD,KD,AC,7C,8C,9C,10C,JC,QC,KC,AH,7H,8H,9H,10H,JH,QH,KH')
-
+    const { data: deck } = await axios('https://deckofcardsapi.com/api/deck/new/shuffle/?cards=AS,7S,8S,9S,0S,JS,QS,KS,AD,7D,8D,9D,' +
+      '0D,JD,QD,KD,AC,7C,8C,9C,0C,JC,QC,KC,AH,7H,8H,9H,0H,JH,QH,KH')
     if (deck.deck_id) {
       try {
-        const { data } = await axios (`https://deckofcardsapi.com/api/deck/${deck.deck_id}/draw/?count=28`)
+        const { data } = await axios (`https://deckofcardsapi.com/api/deck/${deck.deck_id}/draw/?count=32`)
         cards = data.cards
       } catch (e) {
         console.error(e)
@@ -27,6 +26,8 @@ let piles = null;
     piles = cards?.reduce((accum, item) => {
       const lastPile = accum[accum.length - 1]
       if (lastPile && lastPile.length < 6) {
+        lastPile.push(item)
+      } else if (accum.length > 4)  {
         lastPile.push(item)
       } else accum.push([item])
       return accum
@@ -51,10 +52,12 @@ app.ws('/', (ws, res) => {
         break
       case 'deal':
         sendCards(ws, msg, piles)
+        countDownTimer(ws, msg)
         break
       case 'ready':
         setReadyUsers(ws, msg)
         break
+
     }
   })
 })
@@ -73,8 +76,10 @@ const broadcastConnection = (ws, msg, other) => {
       if (!other) {
         client.send(JSON.stringify(msg))
       }
-      else {
+      else if (typeof other[0] === 'number') {
         client.send(JSON.stringify(other))
+      } else {
+        client.send(JSON.stringify([other, readyUsers[0]]))
       }
     }
   })
@@ -84,16 +89,28 @@ const sendCards = (ws, msg, piles) => {
     const map = {}
     piles?.reduce((accum, item, index) => {
       if (readyUsers.length !== index) {
-        map[readyUsers[index]] = item
-      } else if (index === readyUsers.length) {
+        map[readyUsers[index]?.name] = item
+      } else {
         map['other'] = item
       }
       return map
     }, {})
-  broadcastConnection(ws, msg, map)
+    broadcastConnection(ws, msg, map)
 }
 
 const readyUsers = []
 const setReadyUsers = (ws, msg) => {
-  readyUsers.push(msg.name)
+  readyUsers.push(msg)
+}
+
+let countDown = 30
+const countDownTimer = (ws, msg) => {
+    msg.method = 'countDown'
+    setTimeout(() => {
+      if (countDown >= 0) {
+        broadcastConnection(ws, msg, [countDown, msg])
+        countDown--
+        countDownTimer(ws, msg)
+      }
+    }, 1000)
 }
